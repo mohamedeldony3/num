@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول / إنشاء حساب</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; text-align: right; background-color: #f4f4f4; }
+        .container { max-width: 400px; margin: 50px auto; padding: 30px; border: 1px solid #ccc; border-radius: 8px; background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #007bff; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="password"] { width: 95%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        .toggle-link { text-align: center; margin-top: 20px; }
+        .message { padding: 10px; margin-top: 15px; border-radius: 4px; text-align: center; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 id="form-title">تسجيل الدخول</h1>
+
+        <div id="message-display" class="message" style="display: none;"></div>
+
+        <form id="auth-form">
+            <label for="username">اسم المستخدم:</label>
+            <input type="text" id="username" required>
+
+            <label for="password">كلمة المرور:</label>
+            <input type="password" id="password" required>
+
+            <button type="submit" id="submit-btn">تسجيل الدخول</button>
+        </form>
+
+        <div class="toggle-link">
+            <a href="#" id="toggle-auth">ليس لديك حساب؟ إنشاء حساب</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('auth-form');
+        const toggleLink = document.getElementById('toggle-auth');
+        const formTitle = document.getElementById('form-title');
+        const submitBtn = document.getElementById('submit-btn');
+        const messageDisplay = document.getElementById('message-display');
+        let isRegisterMode = false;
+
+        function showMessage(msg, isSuccess = true) {
+            messageDisplay.textContent = msg;
+            messageDisplay.className = `message ${isSuccess ? 'success' : 'error'}`;
+            messageDisplay.style.display = 'block';
+        }
+
+        toggleLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            isRegisterMode = !isRegisterMode;
+            if (isRegisterMode) {
+                formTitle.textContent = 'إنشاء حساب جديد';
+                submitBtn.textContent = 'إنشاء حساب';
+                toggleLink.textContent = 'لديك حساب بالفعل؟ تسجيل الدخول';
+            } else {
+                formTitle.textContent = 'تسجيل الدخول';
+                submitBtn.textContent = 'تسجيل الدخول';
+                toggleLink.textContent = 'ليس لديك حساب؟ إنشاء حساب';
+            }
+            messageDisplay.style.display = 'none';
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            messageDisplay.style.display = 'none';
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            const endpoint = isRegisterMode ? '/api/register' : '/api/login';
+            const action = isRegisterMode ? 'إنشاء حساب' : 'تسجيل الدخول';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage(data.message, true);
+                    
+                    if (!isRegisterMode) {
+                        // 🔑 حفظ معرف المستخدم والرصيد في التخزين المحلي
+                        localStorage.setItem('currentUserId', data.userId);
+                        localStorage.setItem('currentUserBalance', data.balance); 
+                        
+                        // 🚀 توجيه المستخدم إلى صفحة طلب الأرقام
+                        window.location.href = 'index.html'; 
+                    } else {
+                        // عند إنشاء الحساب، ننتقل تلقائياً لوضع تسجيل الدخول
+                        isRegisterMode = false;
+                        document.getElementById('password').value = '';
+                        document.getElementById('username').value = '';
+                        toggleLink.click();
+                    }
+
+                } else {
+                    showMessage(data.message, false);
+                }
+
+            } catch (error) {
+                console.error(`خطأ في ${action}:`, error);
+                showMessage(`حدث خطأ في الاتصال بالخادم أثناء ${action}.`, false);
+            }
+        });
+    </script>
+</body>
+</html>
