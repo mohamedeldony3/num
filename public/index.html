@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>موقع بيع الأرقام الوهمية</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; text-align: right; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 15px;}
+        label, select, button { display: block; margin-bottom: 10px; width: 100%; }
+        button { padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .result { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9; }
+        #blacklist-btn { background-color: #dc3545; margin-top: 5px; } 
+        #history-display { border-top: 1px solid #ccc; padding-top: 10px; }
+        .balance-box { background-color: #e9ecef; border: 1px solid #ddd; padding: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="container balance-box">
+        <h2>💳 معلومات الحساب</h2>
+        <p><strong>معرف المستخدم:</strong> <span id="user-id-display">...</span></p>
+        <p><strong>رصيدك الحالي:</strong> <span id="current-balance">--.--</span> وحدة</p>
+        <button onclick="fetchHistory()">عرض/إخفاء سجل الشراء</button>
+        <button onclick="logout()" style="background-color: #6c757d; margin-top: 10px;">تسجيل الخروج</button>
+
+        <div style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ccc;">
+            <h4>💰 شحن الرصيد (للاختبار)</h4>
+            <label for="credit-amount">أدخل المبلغ للشحن:</label>
+            <input type="number" id="credit-amount" min="1" step="any" placeholder="المبلغ (مثال: 5.00)" style="width: 95%;">
+            <button onclick="addCredit()" style="background-color: #28a745;">إضافة رصيد</button>
+            <p id="credit-message" style="font-size: 0.9em;"></p>
+        </div>
+        
+        <div id="history-display" style="max-height: 250px; overflow-y: scroll; margin-top: 10px; display: none;">
+            </div>
+    </div>
+
+    <div class="container">
+        <h1>🔢 طلب رقم وهمي جديد</h1>
+        
+        <label for="country-select">اختر الدولة:</label>
+        <select id="country-select">
+            <option value="">... جارٍ التحميل ...</option>
+        </select>
+
+        <label for="service-select">اختر التطبيق (PID):</label>
+        <select id="service-select">
+            <option value="0528">واتساب</option>
+            <option value="0257">تيلجرام</option>
+            <option value="0013">فيسبوك</option>
+            </select>
+        
+        <button onclick="requestNumber()">طلب رقم جديد</button>
+
+        <div id="result-display" class="result">
+            <p><strong>حالة الطلب:</strong> <span id="status">في انتظار الطلب...</span></p>
+            <p><strong>الرقم الذي تم طلبه:</strong> <span id="phone-number"></span></p>
+            <p><strong>الكود المستلم:</strong> <span id="verification-code"></span></p>
+        </div>
+
+        <button id="check-code-btn" onclick="checkCode()" disabled>التحقق من الكود</button>
+        <button id="blacklist-btn" onclick="addBlacklist()" disabled>حظر الرقم (Blacklist)</button>
+        
+        <p id="message"></p>
+    </div>
+
+    <div class="container" style="margin-top: 25px; background-color: #ffe0b2; border: 1px solid #ff9800;">
+        <h2>👑 أدوات المسؤول (Admin Panel)</h2>
+        <p style="color: #ff0000;">⚠️ استخدم هذا القسم بحذر شديد.</p>
+
+        <label for="admin-key-input">مفتاح المسؤول السري:</label>
+        <input type="password" id="admin-key-input" placeholder="أدخل المفتاح السري" style="width: 95%;">
+
+        <label for="target-user-id">معرف المستخدم المستهدف (Target User ID):</label>
+        <input type="text" id="target-user-id" placeholder="ID المستخدم الذي تريد شحنه" style="width: 95%;">
+
+        <label for="admin-credit-amount">مبلغ الإضافة:</label>
+        <input type="number" id="admin-credit-amount" min="0.01" step="any" placeholder="المبلغ (مثال: 50.00)" style="width: 95%;">
+        
+        <button onclick="adminAddCredit()" style="background-color: #ff9800;">إضافة رصيد كمسؤول</button>
+        <p id="admin-message" style="font-size: 0.9em; margin-top: 10px;"></p>
+    </div>
+
+
+    <script>
+        // 📚 توثيق: المتغيرات العالمية
+        let currentPhoneNumber = null; 
+        let currentPid = null; 
+        let currentUserId = null; 
+
+        // 🔑 توثيق: التحقق من وجود معرف المستخدم عند تحميل الصفحة
+        function checkAuthentication() {
+            const storedUserId = localStorage.getItem('currentUserId');
+            if (storedUserId) {
+                currentUserId = storedUserId;
+                document.getElementById('user-id-display').textContent = currentUserId; 
+                fetchBalance(); 
+                fetchCountries();
+            } else {
+                // ⚠️ توجيه المستخدم إلى صفحة تسجيل الدخول إذا لم يكن هناك معرف مستخدم
+                alert('الرجاء تسجيل الدخول أولاً.');
+                window.location.href = 'login.html';
+            }
+        }
+
+        // ➡️ توثيق: دالة تسجيل الخروج
+        function logout() {
+            localStorage.removeItem('currentUserId');
+            localStorage.removeItem('currentUserBalance');
+            window.location.href = 'login.html';
+        }
+
+        // ➡️ توثيق: جلب وتحديث الرصيد
+        async function fetchBalance() {
+            if (!currentUserId) return;
+            try {
+                const response = await fetch(`/api/balance/${currentUserId}`);
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('current-balance').textContent = data.balance.toFixed(2);
+                }
+            } catch (error) {
+                console.error('فشل جلب الرصيد:', error);
+            }
+        }
+
+        // ➡️ توثيق: جلب وعرض سجل الشراء
+        async function fetchHistory() {
+            if (!currentUserId) return;
+
+            const historyDiv = document.getElementById('history-display');
+            if (historyDiv.style.display === 'block') {
+                historyDiv.style.display = 'none';
+                return;
+            }
+            historyDiv.style.display = 'block';
+            historyDiv.innerHTML = '<p>جارٍ تحميل السجل...</p>';
+
+            try {
+                const response = await fetch(`/api/history/${currentUserId}`);
+                const data = await response.json();
+                
+                if (data.success && data.history.length > 0) {
+                    historyDiv.innerHTML = '<h4>آخر الطلبات:</h4>';
+                    data.history.forEach(order => {
+                        const statusText = order.status === 'RECEIVED_CODE' ? '✅ تم الاستلام' : 
+                                           order.status === 'BLACKLISTED' ? '🚫 محظور' : '⏳ انتظار الكود';
+                        
+                        historyDiv.innerHTML += `<p style="border-bottom: 1px dotted #ccc; padding-bottom: 5px; font-size: 0.9em;">
+                            **${order.phoneNumber}** - (${order.country})<br>
+                            الحالة: ${statusText} | الكلفة: ${order.cost.toFixed(2)} | في: ${new Date(order.createdAt).toLocaleDateString()}
+                        </p>`;
+                    });
+                } else {
+                    historyDiv.innerHTML = '<p>لا يوجد سجل شراء حالياً.</p>';
+                }
+            } catch (error) {
+                console.error('فشل جلب السجل:', error);
+                historyDiv.innerHTML = '<p>خطأ في جلب السجل.</p>';
+            }
+        }
+
+        // ➡️ توثيق: جلب الدول المتاحة
+        async function fetchCountries() {
+            try {
+                const response = await fetch('/api/countries');
+                const data = await response.json();
+                const select = document.getElementById('country-select');
+                select.innerHTML = ''; 
+
+                if (data.success && data.countries) {
+                    select.add(new Option('--- اختر دولة ---', ''));
+                    for (const [countryCode, count] of Object.entries(data.countries)) {
+                        select.add(new Option(`${countryCode.toUpperCase()} (${count} متوفر)`, countryCode));
+                    }
+                } else {
+                    select.add(new Option('فشل في تحميل الدول', ''));
+                }
+            } catch (error) {
+                console.error('خطأ في جلب الدول:', error);
+            }
+        }
+
+        // ➡️ توثيق: طلب رقم جديد
+        async function requestNumber() {
+            const country = document.getElementById('country-select').value;
+            const pid = document.getElementById('service-select').value; 
+
+            if (!country || !pid) {
+                alert('الرجاء اختيار الدولة والتطبيق أولاً.');
+                return;
+            }
+            if (!currentUserId) {
+                alert('يجب تسجيل الدخول.');
+                return;
+            }
+
+            currentPid = pid; 
+            document.getElementById('status').textContent = 'جارٍ طلب الرقم...';
+            document.getElementById('phone-number').textContent = '';
+            document.getElementById('verification-code').textContent = '';
+            document.getElementById('check-code-btn').disabled = true;
+            document.getElementById('blacklist-btn').disabled = true;
+            document.getElementById('message').textContent = '';
+
+            try {
+                const response = await fetch('/api/request-number', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ country: country, pid: currentPid, userId: currentUserId }) 
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentPhoneNumber = data.number;
+                    document.getElementById('status').textContent = 'تم طلب الرقم بنجاح.';
+                    document.getElementById('phone-number').textContent = currentPhoneNumber;
+                    document.getElementById('check-code-btn').disabled = false;
+                    document.getElementById('blacklist-btn').disabled = false; 
+                    document.getElementById('message').textContent = 'ضع الرقم واضغط "التحقق من الكود" أو "حظر الرقم".';
+                    fetchBalance(); 
+                } else {
+                    document.getElementById('status').textContent = 'فشل الطلب.';
+                    document.getElementById('phone-number').textContent = data.message || 'لم يتم الحصول على رقم.';
+                }
+            } catch (error) {
+                console.error('خطأ في طلب الرقم:', error);
+                document.getElementById('status').textContent = 'خطأ في الاتصال بالخادم.';
+            }
+        }
+
+        // ➡️ توثيق: التحقق من وصول الكود
+        async function checkCode() {
+            if (!currentPhoneNumber || !currentPid || !currentUserId) {
+                alert('معلومات الطلب غير كاملة.');
+                return;
+            }
+
+            document.getElementById('status').textContent = 'جارٍ التحقق من الكود...';
+            document.getElementById('message').textContent = 'قد يستغرق الأمر بضع ثوانٍ.';
+
+            try {
+                const response = await fetch(`/api/get-code?pn=${currentPhoneNumber}&pid=${currentPid}&userId=${currentUserId}`);
+                const data = await response.json();
+                
+                if (data.success && data.code) {
+                    document.getElementById('status').textContent = '✅ تم استلام الكود بنجاح.';
+                    document.getElementById('verification-code').textContent = data.code;
+                    document.getElementById('message').textContent = 'تم خصم الرصيد بنجاح. يمكنك استخدام الكود الآن.';
+                    document.getElementById('check-code-btn').disabled = true; 
+                    document.getElementById('blacklist-btn').disabled = true;
+                    fetchBalance();
+                } else {
+                    document.getElementById('status').textContent = 'الانتظار.';
+                    document.getElementById('verification-code').textContent = 'لم يتم استلام الكود بعد. حاول مرة أخرى.';
+                }
+            } catch (error) {
+                console.error('خطأ في جلب الكود:', error);
+                document.getElementById('status').textContent = 'خطأ في الاتصال بالخادم.';
+            }
+        }
+
+        // ➡️ توثيق: إضافة دالة لحظر الرقم
+        async function addBlacklist() {
+            if (!currentPhoneNumber || !currentPid || !currentUserId) {
+                alert('لا يوجد رقم نشط لحظره.');
+                return;
+            }
+
+            if (!confirm(`هل أنت متأكد من حظر الرقم ${currentPhoneNumber}؟`)) {
+                return;
+            }
+
+            document.getElementById('status').textContent = 'جارٍ حظر الرقم...';
+            document.getElementById('blacklist-btn').disabled = true;
+            document.getElementById('check-code-btn').disabled = true;
+            
+            try {
+                const response = await fetch('/api/add-blacklist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pn: currentPhoneNumber, pid: currentPid, userId: currentUserId }) 
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('status').textContent = '🚫 تم حظر الرقم بنجاح.';
+                    document.getElementById('message').textContent = 'الرقم محظور الآن. يمكنك طلب رقم جديد.';
+                    currentPhoneNumber = null; 
+                    currentPid = null;
+                } else {
+                    document.getElementById('status').textContent = 'فشل عملية الحظر.';
+                    document.getElementById('message').textContent = data.message || 'حدث خطأ غير معروف أثناء الحظر.';
+                    document.getElementById('blacklist-btn').disabled = false; 
+                    document.getElementById('check-code-btn').disabled = false;
+                }
+            } catch (error) {
+                console.error('خطأ في عملية الحظر:', error);
+                document.getElementById('status').textContent = 'خطأ في الاتصال بالخادم أثناء الحظر.';
+            }
+        }
+
+        // ➡️ توثيق: (10) - دالة لإرسال طلب شحن الرصيد للمستخدم العادي
+        async function addCredit() {
+            if (!currentUserId) {
+                alert('الرجاء تسجيل الدخول أولاً.');
+                return;
+            }
+
+            const amountInput = document.getElementById('credit-amount');
+            const amount = amountInput.value;
+            const creditMessage = document.getElementById('credit-message');
+
+            if (!amount || parseFloat(amount) <= 0) {
+                creditMessage.textContent = 'الرجاء إدخال مبلغ صحيح.';
+                creditMessage.style.color = '#dc3545';
+                return;
+            }
+            
+            creditMessage.textContent = 'جارٍ معالجة طلب الشحن...';
+            creditMessage.style.color = '#007bff';
+            
+            try {
+                const response = await fetch('/api/add-credit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUserId, amount: amount })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    creditMessage.textContent = data.message;
+                    creditMessage.style.color = '#28a745';
+                    amountInput.value = ''; 
+                    fetchBalance(); 
+                } else {
+                    creditMessage.textContent = data.message;
+                    creditMessage.style.color = '#dc3545';
+                }
+
+            } catch (error) {
+                console.error('خطأ في شحن الرصيد:', error);
+                creditMessage.textContent = 'فشل الاتصال بالخادم لإتمام عملية الشحن.';
+                creditMessage.style.color = '#dc3545';
+            }
+        }
+        
+        // ➡️ توثيق: (11) - دالة لإرسال طلب شحن الرصيد للمسؤول
+        async function adminAddCredit() {
+            const adminKey = document.getElementById('admin-key-input').value;
+            const targetUserId = document.getElementById('target-user-id').value;
+            const amount = document.getElementById('admin-credit-amount').value;
+            const adminMessage = document.getElementById('admin-message');
+
+            if (!adminKey || !targetUserId || parseFloat(amount) <= 0) {
+                adminMessage.textContent = 'الرجاء ملء جميع الحقول بشكل صحيح.';
+                adminMessage.style.color = '#dc3545';
+                return;
+            }
+
+            adminMessage.textContent = 'جارٍ إضافة الرصيد كمسؤول...';
+            adminMessage.style.color = '#ff9800';
+
+            try {
+                const response = await fetch('/api/admin/add-credit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetUserId: targetUserId, amount: amount, adminKey: adminKey })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    adminMessage.textContent = data.message + ` الرصيد الجديد: ${data.newBalance.toFixed(2)}`;
+                    adminMessage.style.color = '#28a745';
+                    
+                    if (targetUserId === currentUserId) {
+                        fetchBalance();
+                    }
+
+                } else {
+                    adminMessage.textContent = data.message || 'فشل العملية.';
+                    adminMessage.style.color = '#dc3545';
+                }
+
+            } catch (error) {
+                console.error('خطأ المسؤول في شحن الرصيد:', error);
+                adminMessage.textContent = 'فشل الاتصال بالخادم لإضافة الرصيد.';
+                adminMessage.style.color = '#dc3545';
+            }
+        }
+
+        // 📚 توثيق: تشغيل وظائف الإعداد وجلب الدول عند تحميل الصفحة
+        window.onload = checkAuthentication;
+
+    </script>
+</body>
+</html>
